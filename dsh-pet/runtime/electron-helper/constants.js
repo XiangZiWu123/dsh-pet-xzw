@@ -145,7 +145,19 @@ const BASE = BRIDGE ? 'dsh-pet-bridge://dsh-pet/dsh-pet-7340' : ORIGIN + '/dsh-p
 const STATE_URL = BASE + '/state'; // 轮询统一状态 S：前端 1s 轮询的唯一数据源（余额/工作状态/通知/说话）
 const BALANCE_URL = BASE + '/balance'; // 余额刷新动作（POST，写 S；数据本身从 /state 读）
 const WHISPER_URL = BASE + '/whisper';
+// 实况上报（渲染端 → 宿主，**内部通道**）：第三方用 GET /pose 读宿主存下的这份快照
+const POSE_REPORT_URL = BASE + '/pose/report';
+// 实况上报的节流间隔（ms）。sendBounds 在走位/抛掷时是**逐帧**调用的（60Hz），必须合并。
+// **必须带 trailing edge**（到点读当前值推一次）：只做 leading 会把"走位结束时的最后一次位置"
+// 丢掉，第三方读到的永远是中途值，而且没有任何报错。
+const POSE_THROTTLE_MS = 400;
 const BUBBLE_DURATION_MS = 10 * 1000; // 余额/碎碎念气泡展示时长（与浏览器一致：定时自动消失，与动画解耦）
+// 余额气泡展开/收起换内容前的等待（ms）：与 .pet-bubble 的 opacity 过渡同为 .25s，
+// 淡出走完再换内容，否则内容会在半透明时被替换 = 看得见的硬切（与浏览器 bubble.ts 同值）
+const BALANCE_FADE_MS = 250;
+// /state 长轮询的挂起时长（与浏览器端同值）：宿主在"版本没变"时最多挂这么久。
+// 1s 是前端自己定的下限——空闲时请求率与改造前一致（1 req/s），叶子一变宿主立刻返回。
+const STATE_WAIT_MS = 1000;
 // 窗口四周外扩 = 该比例 × 宠物尺寸：为气泡 / 未来可能的弹窗预留显示空间；
 // 外扩区透明且点击穿透（只有身体命中区可交互）。单点可调——按实际观感改这里。
 const WINDOW_MARGIN_RATIO = 0.5;
