@@ -184,18 +184,34 @@
     '@media (prefers-reduced-motion: reduce){.pet-stand{animation:none}}';
   document.head.appendChild(style);
 
-  // 服装包清单与绝对根目录由 host 提供：页面可能跑在 junction 后的真实路径上，相对路径会跨盘失效
-  fetch(BASE + '/outfits')
-    .then((r) => (r.ok ? r.json() : null))
-    .then((d) => {
-      if (!d) return;
-      if (typeof d.root === 'string' && d.root) root = d.root;
-      if (Array.isArray(d.list)) window.PET_OUTFITS = d.list;
-      for (const s of sprites) apply(s);
-    })
-    .catch(() => {
-      /* host 不可达：维持相对路径与已有的 window.PET_OUTFITS */
-    });
+  // 服装包清单与绝对根目录由 host 提供：页面可能跑在 junction 后的真实路径上，相对路径会跨盘失效。
+  // 启动那一拍 bridge 可能还没就绪、sprite 也还没建好，所以两个都要等：拉取失败重试，成功但 sprite
+  // 为空就轮询到它出现再套一次，否则待机会一直停在原版上（apply 早于清单到达，没人再补这一刀）。
+  let fetchTries = 0;
+  function syncPacks() {
+    fetch(BASE + '/outfits')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http ' + r.status))))
+      .then((d) => {
+        if (typeof d.root === 'string' && d.root) root = d.root;
+        if (Array.isArray(d.list) && d.list.length > 0) window.PET_OUTFITS = d.list;
+        let waits = 0;
+        const applyWhenReady = () => {
+          if (!sprites || sprites.length === 0) {
+            if (waits++ < 25) setTimeout(applyWhenReady, 200);
+            return;
+          }
+          for (const s of sprites) apply(s);
+        };
+        applyWhenReady();
+      })
+      .catch(() => {
+        if (fetchTries < 4) {
+          fetchTries++;
+          setTimeout(syncPacks, 400 * fetchTries);
+        }
+      });
+  }
+  syncPacks();
 
   window.PetWardrobe = { list, current, currentId, setOutfit, urlFor, standUrl, apply };
 })();
