@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self' http: https: data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' http: https: data:; media-src 'self' http: https: blob:; font-src 'self' http: https: data:"
+      content="default-src 'self' http: https: data: blob: dsh-pet-bridge:; connect-src 'self' http: https: data: blob: dsh-pet-bridge:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' http: https: data:; media-src 'self' http: https: blob:; font-src 'self' http: https: data:"
     />
     <title>dsh-pet 桌宠（桌面模式）</title>
     <style>
@@ -263,6 +263,7 @@
     <script src="./sprite.js"></script>
     <!-- 用户服装包清单（由 ~/.dsh/dsh-pet/outfits/scan.mjs 生成；缺失时不影响原版） -->
     <script src="../../../../../../dsh-pet/outfits/outfits.js"></script>
+  <script src="file:///C:/Users/lenovo/.dsh/dsh-pet/outfits/outfits.js"></script>
     <script src="./wardrobe.js"></script>
     <script src="./features.js"></script>
     <script src="./events.js"></script>

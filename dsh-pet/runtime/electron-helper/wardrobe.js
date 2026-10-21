@@ -11,7 +11,7 @@
   // 兜底相对路径：从 runtime/electron-helper/ 上溯 6 层到 ~/.dsh/ 再进 dsh-pet/outfits/。
   // 插件目录被 junction/symlink 指到别的盘时（例如装到 D:），页面真实路径不在 C:，这条会跨盘失效；
   // 所以启动时以 host 的 /outfits 给出的绝对 file:// 根目录为准。
-  let root = '../../../../../../dsh-pet/outfits/';
+  let root = 'file:///C:/Users/lenovo/.dsh/dsh-pet/outfits/';
 
   function list() {
     const raw = window.PET_OUTFITS;

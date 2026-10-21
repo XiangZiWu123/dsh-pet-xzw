@@ -55,3 +55,15 @@ node extras/tts/install-tts-worker.mjs
 
 代码遵循原项目的 MIT 许可，保留上游 `LICENSE` 与版权声明；本仓库是在 `PC2005-cloud/dsh-pet` 基础上的定制版。
 服装立绘、表情包、音色属于第三方素材，公开发布前需单独确认授权。
+
+## 六、换机器时要改的绝对路径
+
+桌面页跑在插件目录的真实路径上（junction 解析后是 D 盘），所以服装清单用了一条绝对路径兜底；
+同时 CSP 放开了 bridge scheme 的 connect-src，host 的 \/outfits\ 仍会覆盖它。
+
+| 文件 | 位置 | 内容 |
+|---|---|---|
+| \untime/electron-helper/index.html\ | 第 266 行 | \<script src="file:///C:/Users/lenovo/.dsh/dsh-pet/outfits/outfits.js">\ |
+| \untime/electron-helper/wardrobe.js\ | 第 14 行 | \let root = 'file:///C:/Users/lenovo/.dsh/dsh-pet/outfits/';\ |
+
+换用户目录/换机器时改这两行即可（也可以只依赖 host 的 \/outfits\，把这两处删回相对路径）。
