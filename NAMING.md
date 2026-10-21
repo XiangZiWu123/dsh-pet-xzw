@@ -7,7 +7,7 @@
 
 | 名字 | 值 | 对应什么 / 写在哪 |
 |---|---|---|
-| GitHub 仓库 | `dsh-pet-xzw` | 仓库名。当前仓库还叫 `dsh-pet`，改名后 GitHub 会自动重定向旧地址 |
+| GitHub 仓库 | `dsh-pet-xzw` | 仓库名；已在 GitHub 上改名，旧地址自动重定向 |
 | npm 包名 / 插件 id | `dsh-pet-xzw` | `dsh-pet/package.json` 的 `name`；`dsh-pet/cordis.patch.yml` 的 `id` 与 `name`；profile `package.json` 的依赖键 |
 | 命令行 | `dsh-pet-xzw-standalone` | `package.json` 的 `bin`，独立模式 CLI |
 | 插件显示名 | `桌宠 · XZW` | 插件管理页与 README 的展示名（由包名派生，没有单独字段） |
@@ -32,6 +32,11 @@
 4. `node_modules` 下的目录名（junction 重建）
 5. `pnpm build` 重跑一次（`prepare.js` 会重写 `files` 清单）
 6. 重启 DSH
+
+> **搬目录之后必须补一刀**：pnpm 的 `node_modules/*` 链接是**绝对路径**（指向 `.pnpm/...` 的 junction），
+> 把仓库目录改名或搬盘会让它们全部悬空，插件加载时报
+> `Cannot find package '@deepseek-ai/dsh-home-paths'`。搬完执行一次
+> `pnpm install --force` 重建链接即可（实测 25 秒）。
 
 ## 四、仓库里额外带的东西
 

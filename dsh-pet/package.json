@@ -14,13 +14,13 @@
     "cordis",
     "react"
   ],
-  "homepage": "https://github.com/XiangZiWu123/dsh-pet#readme",
+  "homepage": "https://github.com/XiangZiWu123/dsh-pet-xzw#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/XiangZiWu123/dsh-pet.git"
+    "url": "git+https://github.com/XiangZiWu123/dsh-pet-xzw.git"
   },
   "bugs": {
-    "url": "https://github.com/XiangZiWu123/dsh-pet/issues"
+    "url": "https://github.com/XiangZiWu123/dsh-pet-xzw/issues"
   },
   "_comment": [
     "=============== dsh-pet 包清单说明 ===============",
