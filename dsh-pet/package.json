@@ -1,7 +1,7 @@
 {
-  "name": "dsh-pet",
+  "name": "dsh-pet-xzw",
   "version": "0.3.7",
-  "description": "吃白饭的蓝色大肥鱼，赖在 DeepSeek Harness 里不走了。平时爱玩魔方、爱吃各种零食、偶尔打个盹，闲不住就在桌面上溜达两圈，被你拖来甩去也照旧赖着；你忙起来它跟着忙前忙后，也会帮你打理余额钱包，闲下来爱碎碎念，还乐意陪你唠两句。",
+  "description": "桌面宠物（XZW 定制版）：玩法层、语音层与换装层，支持服装包换装。",
   "icon": "assets/logo.png",
   "keywords": [
     "dsh",
@@ -14,13 +14,13 @@
     "cordis",
     "react"
   ],
-  "homepage": "https://github.com/PC2005-cloud/dsh-pet#readme",
+  "homepage": "https://github.com/XiangZiWu123/dsh-pet#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/PC2005-cloud/dsh-pet.git"
+    "url": "git+https://github.com/XiangZiWu123/dsh-pet.git"
   },
   "bugs": {
-    "url": "https://github.com/PC2005-cloud/dsh-pet/issues"
+    "url": "https://github.com/XiangZiWu123/dsh-pet/issues"
   },
   "_comment": [
     "=============== dsh-pet 包清单说明 ===============",
@@ -43,7 +43,7 @@
   "type": "module",
   "main": "lib/index.js",
   "bin": {
-    "dsh-pet-standalone": "lib/standalone.js"
+    "dsh-pet-xzw-standalone": "lib/standalone.js"
   },
   "exports": {
     ".": {
@@ -69,6 +69,7 @@
     "assets/config.jsonc",
     "assets/logo.png",
     "scripts/ensure-electron.mjs",
+    "extras",
     "cordis.patch.yml"
   ],
   "scripts": {

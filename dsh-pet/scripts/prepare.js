@@ -75,6 +75,8 @@ const keep = [
   // 读取方 dsh-app-boot 的 iconOf 找不到文件会抛错，图标退回默认插画
   'assets/logo.png',
   'scripts/ensure-electron.mjs',
+  // 运行时不随包走的补丁（TTS worker 的重试版 + 安装脚本）：给用户自己装到 ~/.dsh/dsh-pet/tts
+  'extras',
   'cordis.patch.yml',
 ];
 writeFileSync(PKG, JSON.stringify({ ...pkg, files: keep }, null, 2) + '\n', 'utf8');
