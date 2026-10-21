@@ -37,6 +37,18 @@ contextBridge.exposeInMainWorld('petBridge', {
   openDshSite(url) {
     ipcRenderer.send('pet:open-site', { url });
   },
+  // 右键菜单「关闭 DeepSeek Harness」：结束宿主进程（连同后台），桌宠会随宿主一起退出
+  quitHost() {
+    ipcRenderer.send('pet:quit-host');
+  },
+  // 用系统默认浏览器打开外部链接（充值页等）；主进程只放行 https
+  openUrl(url) {
+    ipcRenderer.send('pet:open-url', { url: String(url || '') });
+  },
+  // 运行时语音合成（TTS 朗读）：文本 → base64 mp3，主进程侧带缓存
+  tts(text) {
+    return ipcRenderer.invoke('pet:tts', String(text || ''));
+  },
   // ---- 宠物间碰撞（跨窗 broker）----
   reportFlight(state) {
     ipcRenderer.send('pet:report-flight', state);

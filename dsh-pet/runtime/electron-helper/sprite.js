@@ -361,9 +361,62 @@ class PetSprite {
     return this.pos.y + this.halfH;
   }
 
+  // ---------- 静态立绘模式（B 方案） ----------
+  // 一张透明 PNG 顶替全部动画：呼吸由 CSS 负责，点击/切换时用 WAAPI 弹一下。
+  setStaticMode(src) {
+    this.staticMode = true;
+    if (!this.standEl) {
+      const img = document.createElement('img');
+      img.className = 'pet-stand';
+      img.alt = '';
+      this.stage.appendChild(img);
+      this.standEl = img;
+    }
+    if (this.standEl.src !== src) this.standEl.src = src;
+    this.standEl.style.opacity = '1';
+    // 视频必须真正隐藏：只设 opacity 会被 .is-front 的过渡/合成影响，且仍在后台解码
+    this.videoA.style.display = 'none';
+    this.videoB.style.display = 'none';
+    try {
+      this.videoA.pause();
+      this.videoB.pause();
+    } catch {
+      /* 还没开始播 */
+    }
+  }
+
+  clearStaticMode() {
+    if (!this.staticMode) return;
+    this.staticMode = false;
+    if (this.standEl) this.standEl.style.opacity = '0';
+    this.videoA.style.display = '';
+    this.videoB.style.display = '';
+    // 换回原版动画：重新挑一段待机/随机动作，否则画面会停在最后一帧
+    this.playIdle();
+  }
+
+  staticPulse() {
+    if (!this.standEl || typeof this.standEl.animate !== 'function') return;
+    this.standEl.animate(
+      [
+        { transform: 'translateY(0) scale(1)' },
+        { transform: 'translateY(-7px) scale(1.02)' },
+        { transform: 'translateY(0) scale(1)' },
+      ],
+      { duration: 420, easing: 'ease-out' },
+    );
+  }
+
   // 双缓冲切换（与浏览器同一套：前台 opacity 切换 + 降级视频清 handler 并停播，防残留 ended 雪崩）
   switchTo(next, nextOnce) {
     if (!next) return;
+    // 静态立绘模式（B 方案）：不播视频，用一张 PNG 做呼吸/点击弹动
+    if (this.staticMode) {
+      this.pendingSquash = false;
+      this.anim = next;
+      this.staticPulse(next);
+      return;
+    }
     const pending = this.pending;
     if (pending && pending.anim === next && pending.once === nextOnce) {
       // 防重命中（单动画点击时目标=当前动画，不重播）：仍消费 Q 弹标记，压当前前台视频，
@@ -379,7 +432,10 @@ class PetSprite {
     const target = this.front === 0 ? this.videoB : this.videoA;
     const el = target;
     if (!el) return;
-    el.src = this.assetBase + encodeURIComponent(next) + (S.ANIMATION_EXT || '.webm');
+    // 换装（A-lite）：该动画在服装包里有同名 webm 就优先用服装包，否则回落原版素材
+    const custom = this.outfitSrc ? this.outfitSrc(next) : null;
+    el.dataset.outfitFallback = '';
+    el.src = custom || this.assetBase + encodeURIComponent(next) + (S.ANIMATION_EXT || '.webm');
     el.loop = !nextOnce;
     el.muted = true;
     el.autoplay = true;
@@ -396,6 +452,13 @@ class PetSprite {
     const loadTimer = window.setTimeout(() => loadGuard('10s 超时'), 10000);
     el.onerror = () => {
       window.clearTimeout(loadTimer);
+      // 换装包缺这个动画（或文件坏了）：先退回原版素材再试一次，不让它卡在加载失败
+      if (custom && el.dataset.outfitFallback !== '1') {
+        el.dataset.outfitFallback = '1';
+        el.src = this.assetBase + encodeURIComponent(next) + (S.ANIMATION_EXT || '.webm');
+        el.load();
+        return;
+      }
       loadGuard('video error');
     };
     el.load();
@@ -1000,7 +1063,9 @@ class PetSprite {
   syncInputRegions() {
     if (!window.petBridge || !window.petBridge.setInputRegions) return;
     const rects = [];
-    const controls = [...document.querySelectorAll('.dsh-pet-menu-column, .dsh-pet-chat')];
+    const controls = [
+      ...document.querySelectorAll('.dsh-pet-menu-column, .dsh-pet-chat, .pet-game, .pet-note-input'),
+    ];
     for (const el of this.inputRegionElements) {
       if (!controls.includes(el)) {
         this.inputRegionResize.unobserve(el);
@@ -1125,6 +1190,11 @@ class PetSprite {
   onClick() {
     const d = this.dragState;
     if (d.active || d.dragging || this.justDragged) return;
+    // 点击音效（本地最小版，sound.js 合成）：真实点击才响——拖拽后的 click、菜单打开时已在上面拦住。
+    // 放在积分分支之前：按下即计分的那些点击同样有回应，不会出现"点了但没声"。
+    if (window.PetSound) window.PetSound.click();
+    // 玩法层：签到 / 亲密度（拖拽后的 click 已在上面被拦，不会误记）
+    if (this.play) this.play.onClick();
     // 积分判定已在 onPointerDown（按下即触发）完成：
     // 本次按下已触发过积分 → 只收手停住、**不**再播普通点击动画（粒子+弹窗即反馈，与浏览器同构）
     if (this.pressScoreFired) {
@@ -1178,10 +1248,20 @@ class PetSprite {
     // 碎碎念/对话项无条件显示：手动触发不受 whisperEnabled 限制（该字段只影响自动周期轮询）
     // 首项文案随宿主形态变（OPEN_TARGET）：宿主是 DSH 桌面应用时点是"唤起桌面应用窗口"，仍叫「打开网站」会误导
     const tools = [{ label: OPEN_TARGET === 'desktop' ? '打开 DeepSeek Harness' : '打开网站', action: 'open-site' }];
+    if (OPEN_TARGET === 'desktop') tools.push({ label: '关闭 DeepSeek Harness', action: 'quit-host' });
     if (this.pet.balanceEnabled) tools.push({ label: '查看余额', action: 'show-balance' });
+    if (this.pet.balanceEnabled) tools.push({ label: '充值', action: 'recharge' });
     tools.push(
       { label: '碎碎念', action: 'whisper' },
       { label: '对话', action: 'chat' },
+      // 音效开关 + 音色选择（本地最小版）：开关标签带当前状态；音色子菜单首项标 ✓
+      {
+        label: '音效：' + (window.PetSound && window.PetSound.isEnabled() ? '开' : '关'),
+        action: 'toggle-sound',
+      },
+      ...(window.PetSound ? [{ label: '点击音色', children: window.PetSound.menuItems() }] : []),
+      // 玩法层（签到/猜拳/投喂/提醒/朗读/彩蛋/主题）：挂在 PetPlay 上，renderer 建 sprite 时装配
+      ...(this.play ? this.play.menuItems() : []),
       { label: '回到初始位置', action: 'home' },
       // 改配置文件后免去回设置页点保存：请宿主重启桌面 Helper（全部桌面宠物窗口按最新配置重建）。
       // 放在最后：它是"重新加载"这类维护动作，与上面几个宠物互动项语义不同。
@@ -1215,12 +1295,18 @@ class PetSprite {
   onMenuAction(leaf) {
     this.closeMenu();
     if (!leaf || typeof leaf !== 'object') return;
+    // 玩法层菜单项（play-*）优先处理；不认识的再落回原有的动作/动画分发
+    if (this.play && this.play.onMenuAction(leaf)) return;
     if (leaf.action === 'open-site') {
       if (window.petBridge) window.petBridge.openDshSite(ORIGIN); // 系统默认浏览器打开（等效 Ctrl+点击链接）
       return;
     }
     if (leaf.action === 'show-balance') {
       this.showBalanceFromMenu(); // 立即拉余额并展示（无需等 1s 触发轮询，展示路径与周期触发一致）
+      return;
+    }
+    if (leaf.action === 'recharge') {
+      if (this.play) this.play.openRecharge();
       return;
     }
     if (leaf.action === 'whisper') {
@@ -1237,6 +1323,21 @@ class PetSprite {
     }
     if (leaf.action === 'reload') {
       this.reloadDesktop(); // 请宿主重启桌面 Helper：全部桌面宠物窗口按最新配置重建
+      return;
+    }
+    // 关闭 DeepSeek Harness：二次确认后结束宿主（后台一起退，桌宠也会随之退出）
+    if (leaf.action === 'quit-host') {
+      this.confirmQuitHost();
+      return;
+    }
+    // 音效开关：toggle 内部在"关 → 开"时立即播一声确认（同时把状态写进 localStorage）
+    if (leaf.action === 'toggle-sound') {
+      if (window.PetSound) window.PetSound.toggle();
+      return;
+    }
+    // 点击音色：setVariant 内部会立即试听一声（换完就能听到）
+    if (leaf.action === 'sound-variant') {
+      if (window.PetSound) window.PetSound.setVariant(leaf.variant);
       return;
     }
     if (!leaf.anim) return;
@@ -1269,6 +1370,18 @@ class PetSprite {
   // 注意这里不再直接拉余额：数据只有一个出口（S），菜单只负责"让它刷新"。
   showBalanceFromMenu() {
     if (!this.pet.balanceEnabled) return;
+    // 只有「手动查看余额」才语音播报（周期刷新保持安静），由 renderer 的包装消费这个标记
+    this.speakBalanceNext = true;
+    // 兜底：余额没变化时 /state 可能不触发 showBalanceNow，2.5 秒后直接念当前已知余额
+    setTimeout(() => {
+      if (!this.speakBalanceNext) return;
+      this.speakBalanceNext = false;
+      try {
+        if (window.PetTTS && balance) window.PetTTS.speakBalance(balance);
+      } catch {
+        /* 没有可用余额就保持安静 */
+      }
+    }, 2500);
     S.postAction(BALANCE_URL)
       .then((ok) => {
         if (!ok) console.warn('[dsh-pet] 菜单查看余额：刷新动作未成功');
@@ -1330,6 +1443,34 @@ class PetSprite {
     window.__dshPetDebug.chatOpen = true;
     this.syncInputBusy();
     this.setInteractive(true);
+  }
+
+  // 「关闭 DeepSeek Harness」二次确认：复用级联菜单组件，避免误点直接退出
+  confirmQuitHost() {
+    const r = this.hit.getBoundingClientRect();
+    this.stopMove();
+    this.menuOpen = true;
+    this.setInteractive(true);
+    this.syncInputBusy();
+    S.mountContextMenu({
+      tree: [
+        { label: '确定关闭？后台也会退出', action: 'yes' },
+        { label: '取消', action: 'no' },
+      ],
+      x: r.left + r.width / 2,
+      y: r.top - 10,
+      clamp: this.visibleClampRect ? this.visibleClampRect() : null,
+      onAction: (n) => {
+        if (n && n.action === 'yes' && window.petBridge && window.petBridge.quitHost) {
+          window.petBridge.quitHost();
+        }
+      },
+      onClose: () => {
+        this.menuOpen = false;
+        this.syncInputBusy();
+        if (!this.inputBusy()) this.setInteractive(false);
+      },
+    });
   }
 
   // 「回到初始位置」菜单：停掉漫游/移动，清掉拖拽/漫游留下的会话位置，回到配置角落

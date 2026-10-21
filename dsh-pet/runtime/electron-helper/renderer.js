@@ -79,6 +79,12 @@ async function boot() {
     }
     for (const s of sprites) s.dispose();
     sprites = [new PetSprite(pet)];
+    // 玩法层（签到/猜拳/投喂/提醒/朗读/彩蛋/主题）：必须在 sprite 建好后装配
+    if (window.PetPlay) sprites[0].play = new window.PetPlay(sprites[0]);
+    // 换装层：把用户选中的服装包/静态立绘应用到这只宠物（没有服装包时保持原版）
+    if (window.PetWardrobe) window.PetWardrobe.apply(sprites[0]);
+    window.__dshPetDebug.playAttached = !!sprites[0].play;
+    window.__dshPetDebug.outfits = window.PetWardrobe ? window.PetWardrobe.list().length : 0;
     window.__dshPetDebug.configOk = true;
     window.__dshPetDebug.spriteCount = sprites.length;
     for (const s of sprites) s.playIdle();
@@ -134,6 +140,54 @@ window.addEventListener('resize', () => {
     s.position();
   }
 });
+
+// 朗读钩子：必须在 events.js 定义完 showWhisper 之后再包（本文件是最后一个脚本）。
+// 碎碎念、命令气泡、对话回复都走 showWhisper，这里统一读出来；开关在「玩法 → 朗读」。
+if (window.PetTTS) {
+  const origShowWhisper = PetSprite.prototype.showWhisper;
+  PetSprite.prototype.showWhisper = function showWhisperWithVoice(text, image) {
+    origShowWhisper.call(this, text, image);
+    window.PetTTS.readAloud(text);
+  };
+}
+
+// 任务状态播报：同样要在 events.js 定义 onWorkTick 之后包。
+// 只在状态真正变化时念一句（完成/失败/等你确认），不打扰 thinking/working 这些高频档位。
+if (window.PetTTS) {
+  const origWorkTick = PetSprite.prototype.onWorkTick;
+  PetSprite.prototype.onWorkTick = function onWorkTickWithVoice(snapshot, tick) {
+    const enabled = this.pet && this.pet.workStatusEnabled === true;
+    const before = this.workState;
+    origWorkTick.call(this, snapshot, tick);
+    const after = snapshot && snapshot.state ? snapshot.state : null;
+    if (enabled && after && after !== before) window.PetTTS.announce(after);
+  };
+}
+
+// 手动「查看余额」：弹气泡/播档位动画的同时念出余额。
+// showBalanceFromMenu 会置 speakBalanceNext，这里只在手动触发时播报；周期刷新保持安静。
+// 余额不可用时走 showBalanceNotice，顺手把标记清掉，避免下一次周期刷新误念。
+if (window.PetTTS) {
+  const origShowBalance = PetSprite.prototype.showBalanceNow;
+  PetSprite.prototype.showBalanceNow = function showBalanceNowWithVoice(state) {
+    origShowBalance.call(this, state);
+    if (this.speakBalanceNext) {
+      this.speakBalanceNext = false;
+      window.PetTTS.speakBalance(state);
+    }
+  };
+  const origBalanceNotice = PetSprite.prototype.showBalanceNotice;
+  PetSprite.prototype.showBalanceNotice = function showBalanceNoticeClearFlag(state) {
+    this.speakBalanceNext = false;
+    return origBalanceNotice.call(this, state);
+  };
+  // 充值观察期：静默刷新余额，不弹气泡（到账后由 celebrateRecharge 统一庆祝）
+  const origOnBalanceTick = PetSprite.prototype.onBalanceTick;
+  PetSprite.prototype.onBalanceTick = function onBalanceTickQuiet(state, tick) {
+    if (this.rechargeWatch && !this.speakBalanceNext) return;
+    return origOnBalanceTick.call(this, state, tick);
+  };
+}
 
 injectAssets();
 void boot();

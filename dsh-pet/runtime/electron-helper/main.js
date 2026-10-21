@@ -47,7 +47,7 @@ try {
 }
 const { app, BrowserWindow, ipcMain, screen, shell, protocol } = electronApi;
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, execFile } = require('node:child_process');
 const { readFileSync, writeFileSync } = require('node:fs');
 const fsPromises = require('node:fs/promises');
 // 点击穿透兜底通道的纯判定（不依赖 Electron 的 forward 鼠标钩子；见文件头注释）
@@ -59,6 +59,103 @@ const { HOST_POLL_MS, hostIsGone, isBrokenPipeError, parseHostPid } = require('.
 // 全局 DPI 线性化的纯判定与换算（含平台例外：macOS 的 DIP 已是「点」，无需补偿；见该文件头）
 const { shouldLinearize, resolveForcedScale, resolvePetScale } = require('./dpi-linearization.js');
 const { buildDeskGeometry } = require('./desktop-geometry.js');
+
+// ---------- 运行时语音合成（TTS 朗读用）：宿主侧没有可用接口，交给本机 ~/.dsh/dsh-pet/tts 的
+// edge-tts worker（Electron 自带 Node，经 ELECTRON_RUN_AS_NODE=1 当 Node 跑）。结果按文本 sha1
+// 缓存在 ~/.dsh/dsh-pet/tts-cache/，同一句只合成一次。请求串行化，避免并发触发服务端 429。
+const os = require('node:os');
+const crypto = require('node:crypto');
+const { spawn } = require('node:child_process');
+const { existsSync, mkdirSync } = require('node:fs');
+
+function dshHomeDir() {
+  return process.env.DSH_HOME || path.join(os.homedir(), '.dsh');
+}
+
+let ttsChain = Promise.resolve();
+
+function synthTts(text) {
+  const clean = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 300);
+  if (!clean) return Promise.resolve({ ok: false, reason: 'empty' });
+  const dir = path.join(dshHomeDir(), 'dsh-pet', 'tts-cache');
+  // 缓存键包含音色配置：换了 voice/rate/pitch 后旧缓存自动失效
+  let cfgKey = '';
+  try {
+    cfgKey = readFileSync(path.join(dshHomeDir(), 'dsh-pet', 'tts', 'voice-config.json'), 'utf8');
+  } catch {
+    /* 没有配置就用默认 */
+  }
+  const key = crypto.createHash('sha1').update(clean + '|' + cfgKey).digest('hex');
+  const file = path.join(dir, key + '.mp3');
+  if (existsSync(file)) {
+    try {
+      return Promise.resolve({ ok: true, b64: readFileSync(file).toString('base64') });
+    } catch {
+      /* 读失败就重新合成 */
+    }
+  }
+  const worker = path.join(dshHomeDir(), 'dsh-pet', 'tts', 'worker.mjs');
+  if (!existsSync(worker)) return Promise.resolve({ ok: false, reason: 'no-worker' });
+  return new Promise((resolve) => {
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch {
+      /* 目录已存在或不可写：交给 worker 报错 */
+    }
+    let child;
+    try {
+      child = spawn(process.execPath, [worker, file], {
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        stdio: ['pipe', 'ignore', 'ignore'],
+        windowsHide: true,
+      });
+    } catch (e) {
+      resolve({ ok: false, reason: 'spawn: ' + e.message });
+      return;
+    }
+    let settled = false;
+    const finish = (res) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(res);
+    };
+    const timer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        /* 已退出 */
+      }
+      finish({ ok: false, reason: 'timeout' });
+    }, 30000);
+    child.on('error', (e) => finish({ ok: false, reason: 'spawn: ' + e.message }));
+    child.on('exit', (code) => {
+      if (code === 0 && existsSync(file)) {
+        try {
+          finish({ ok: true, b64: readFileSync(file).toString('base64') });
+          return;
+        } catch {
+          /* 落到失败分支 */
+        }
+      }
+      finish({ ok: false, reason: 'exit ' + code });
+    });
+    try {
+      child.stdin.end(clean);
+    } catch {
+      finish({ ok: false, reason: 'stdin' });
+    }
+  });
+}
+
+ipcMain.handle('pet:tts', (event, text) => {
+  const job = ttsChain.then(() => synthTts(text));
+  ttsChain = job.catch(() => {});
+  return job;
+});
 
 // 允许无用户手势直接播放（余额动画等）
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -812,6 +909,49 @@ app.whenReady().then(() => {
       return;
     }
     openSite(url);
+  });
+
+  // 「充值」等外部链接：用系统默认浏览器打开（只放行 https）
+  ipcMain.on('pet:open-url', (event, payload) => {
+    const url = payload && typeof payload === 'object' ? String(payload.url || '') : '';
+    if (!/^https:[/][/]/.test(url)) return;
+    shell.openExternal(url).catch((error) => {
+      console.error('[dsh-pet-desktop-helper] open url failed:', url, error);
+    });
+  });
+
+  // 「关闭 DeepSeek Harness」：结束宿主进程（后台一起退），桌宠随后会因宿主消失自动退出。
+  // 先温和关闭（taskkill 不带 /F 会发 WM_CLOSE），5 秒后仍在就强制结束整棵进程树。
+  let quitRequested = false;
+  ipcMain.on('pet:quit-host', () => {
+    if (quitRequested) return;
+    quitRequested = true;
+    const pid = HOST_PID;
+    if (!(pid > 0)) return;
+    if (process.platform === 'win32') {
+      const run = (args) => {
+        try {
+          execFile('taskkill', args, { windowsHide: true }, () => {});
+        } catch {
+          /* 进程可能已经退出 */
+        }
+      };
+      run(['/PID', String(pid)]);
+      setTimeout(() => run(['/PID', String(pid), '/T', '/F']), 5000);
+    } else {
+      try {
+        process.kill(pid, 'SIGTERM');
+      } catch {
+        /* 已退出 */
+      }
+      setTimeout(() => {
+        try {
+          process.kill(pid, 'SIGKILL');
+        } catch {
+          /* 已退出 */
+        }
+      }, 5000);
+    }
   });
 
   // 显示器热更新：分辨率/缩放变化、插拔屏、旋转都会让桌面几何失效。原先几何只在
