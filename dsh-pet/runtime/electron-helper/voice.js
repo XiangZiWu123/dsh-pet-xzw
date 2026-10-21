@@ -63,7 +63,7 @@
     return play(FIXED_DIR + id + '.mp3', false);
   }
 
-  /** 播任意文本：优先 edge-tts（主进程缓存），失败回退系统语音 */
+  /** 播任意文本：优先 edge-tts（主进程缓存），失败回退同音色的固定句 */
   async function speakText(text) {
     if (!enabled) return false;
     const clean = String(text || '')
@@ -74,9 +74,15 @@
     const my = ++seq;
     if (window.petBridge && typeof window.petBridge.tts === 'function') {
       try {
-        const res = await window.petBridge.tts(clean);
-        if (my !== seq) return false; // 期间又来了新的一句
+        // 合成超时上限：edge-tts 抖动时别让这一句无限期挂着（到点走兜底句）
+        const res = await Promise.race([
+          window.petBridge.tts(clean),
+          new Promise((r) => setTimeout(() => r(null), 5000)),
+        ]);
+        const superseded = my !== seq;
         if (res && res.ok && res.b64) {
+          // 期间来了更新的一句、旧的还在播：丢掉这一句；否则照播（总比一直不出声好）
+          if (superseded && current) return false;
           const bin = atob(res.b64);
           const bytes = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);

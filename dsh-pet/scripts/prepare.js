@@ -65,6 +65,10 @@ const keep = [
   'runtime/electron-helper',
   'assets/fonts',
   'assets/pic',
+  // 语音素材：固定台词 mp3（gen.mjs 生成）与自定义音效。漏掉它们 → speakId 静默失败、
+  // 音色切换全部回退合成音（正是「切了音色还是合成声」「语音偶尔被吞」的成因）
+  'assets/voice-features',
+  'assets/sfx',
   // 表情包（碎碎念/对话配图的图片）：host 只从**包内** assets/memes 读图、与配置 memes 键配对，
   // 漏掉它 → 包内一张图都没有、配图功能整体失效。注意本函数每次发布（npm install/publish）都会
   // 用这个数组**覆盖** package.json 的 files，所以"只在 package.json 里加一行"是无效的，必须加在这里

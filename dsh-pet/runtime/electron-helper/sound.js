@@ -14,19 +14,20 @@
   const KEY_VARIANT = 'dsh-pet.sound.variant';
   const MASTER = 0.55;
   const FILE_VOLUME = 0.8;
-  // 相对 index.html（runtime/electron-helper/）的音频路径：
-  //   ../../     → 包根目录（assets/sfx/ 放用户自己加的音频）
-  //   ../../../  → node_modules（隔壁 dsh-whale-widget 的预置音效，直接引用不复制素材）
+  // 音频路径两套：相对 index.html 的老路径（插件装在 node_modules/dsh-pet 时成立），
+  // 以及绝对路径（插件目录被 junction 指到别的盘时，页面真实路径变了，相对路径会跨盘失效）。
+  // 每个音色都带候选列表，前一个加载失败自动试下一个，全部失败才回退合成音。
   const WHALE = '../../../dsh-whale-widget/assets/';
+  const WHALE_ABS = 'file:///C:/Users/lenovo/.dsh/profiles/desktop/node_modules/dsh-whale-widget/assets/';
 
-  // id → { label, src }：src 为空 = 合成音
+  // id → { label, src, alt }：src 为空 = 合成音
   const VARIANTS = {
     synth: { label: '合成「啵」', src: '' },
-    duck: { label: '小黄鸭·按下', src: WHALE + 'Ya1.mp3' }, // widget 默认按压音（0.24s）
+    duck: { label: '小黄鸭·按下', src: WHALE + 'Ya1.mp3', alt: WHALE_ABS + 'Ya1.mp3' }, // widget 默认按压音（0.24s）
     ciallo: { label: 'Ciallo～', src: '../../assets/sfx/ciallo.mp3' }, // 用户自备（从 Downloads 复制进包）
-    fx1: { label: '音效1·按下', src: WHALE + 'D1.mp3' }, // 0.07s
-    orb: { label: 'Minecraft 经验球', src: WHALE + 'minecraft-exp-orb.wav' }, // 0.62s
-    endA: { label: '任务结束音 A', src: WHALE + 'task-end-a.wav' }, // 1.66s
+    fx1: { label: '音效1·按下', src: WHALE + 'D1.mp3', alt: WHALE_ABS + 'D1.mp3' }, // 0.07s
+    orb: { label: 'Minecraft 经验球', src: WHALE + 'minecraft-exp-orb.wav', alt: WHALE_ABS + 'minecraft-exp-orb.wav' }, // 0.62s
+    endA: { label: '任务结束音 A', src: WHALE + 'task-end-a.wav', alt: WHALE_ABS + 'task-end-a.wav' }, // 1.66s
   };
 
   let ctx = null;
@@ -102,7 +103,7 @@
     blip(c, { type: 'triangle', from: base * 0.5, to: base * 0.22, slide: 0.06, peak: 0.09, dur: 0.1 });
   }
 
-  /** 取（或创建）某个音色对应的 audio 元素；文件加载失败则记 failed，之后永久走合成音 */
+  /** 取（或创建）某个音色对应的 audio 元素；候选路径逐个试，全失败才回退合成音 */
   function player(id) {
     if (players.has(id)) return players.get(id);
     const meta = VARIANTS[id];
@@ -110,14 +111,25 @@
       players.set(id, { failed: true });
       return players.get(id);
     }
-    const el = new Audio(meta.src);
+    const cands = [meta.src, meta.alt].filter(Boolean);
+    const el = new Audio();
     el.preload = 'auto';
     el.volume = FILE_VOLUME;
-    const state = { el };
+    const state = { el, cands, i: 0 };
+    const load = () => {
+      el.src = cands[state.i];
+      el.load();
+    };
     el.addEventListener('error', () => {
+      if (state.i + 1 < cands.length) {
+        state.i++;
+        load();
+        return;
+      }
       state.failed = true;
       el.dataset.failed = '1';
     });
+    load();
     players.set(id, state);
     return state;
   }
@@ -127,9 +139,8 @@
       state.el.currentTime = 0; // 连点时从头再响，不叠成噪音
       const p = state.el.play();
       if (p && typeof p.catch === 'function') {
-        p.catch(() => {
-          state.failed = true; // 解码/权限/文件缺失 → 之后回退合成音
-        });
+        // play() 被拒大多是自动播放策略，不当成文件损坏（下次点击还会再试）
+        p.catch(() => {});
       }
       return true;
     } catch {

@@ -65,6 +65,8 @@
     "runtime/electron-helper",
     "assets/fonts",
     "assets/pic",
+    "assets/voice-features",
+    "assets/sfx",
     "assets/memes",
     "assets/config.jsonc",
     "assets/logo.png",

@@ -26,7 +26,7 @@ const cfg = JSON.parse(fs.readFileSync(path.join(here, 'voice-config.json'), 'ut
 fs.mkdirSync(path.dirname(out), { recursive: true });
 const prosody = { rate: cfg.rate || '+0%', pitch: cfg.pitch || '+0Hz', volume: cfg.volume || '+0%' };
 
-const ATTEMPTS = 3;
+const ATTEMPTS = 2;
 let lastErr;
 for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
   try {
@@ -41,7 +41,7 @@ for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     if (attempt === ATTEMPTS - 1) break;
     // 429 / 限流退避长一点，其它抖动短一点
     const rateLimited = /429|too many|rate limit|throttl/i.test(String(e && e.message));
-    await new Promise((r) => setTimeout(r, rateLimited ? 1800 * (attempt + 1) : 700));
+    await new Promise((r) => setTimeout(r, rateLimited ? 900 : 400));
   }
 }
 console.error('tts failed: ' + (lastErr && lastErr.message ? lastErr.message : lastErr));
