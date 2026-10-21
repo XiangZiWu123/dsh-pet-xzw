@@ -8,8 +8,10 @@
   'use strict';
 
   const KEY = 'dsh-pet.outfit';
-  // 从 runtime/electron-helper/ 上溯 6 层到 ~/.dsh/，再进 dsh-pet/outfits/
-  const ROOT = '../../../../../../dsh-pet/outfits/';
+  // 兜底相对路径：从 runtime/electron-helper/ 上溯 6 层到 ~/.dsh/ 再进 dsh-pet/outfits/。
+  // 插件目录被 junction/symlink 指到别的盘时（例如装到 D:），页面真实路径不在 C:，这条会跨盘失效；
+  // 所以启动时以 host 的 /outfits 给出的绝对 file:// 根目录为准。
+  let root = '../../../../../../dsh-pet/outfits/';
 
   function list() {
     const raw = window.PET_OUTFITS;
@@ -40,13 +42,13 @@
     const o = current();
     if (!o || o.static) return null;
     if (Array.isArray(o.animations) && o.animations.indexOf(anim) < 0) return null;
-    return ROOT + encodeURIComponent(o.id) + '/webm/' + encodeURIComponent(anim) + '.webm';
+    return root + encodeURIComponent(o.id) + '/webm/' + encodeURIComponent(anim) + '.webm';
   }
 
   function standUrl() {
     const o = current();
     if (!o || !o.static) return null;
-    return ROOT + encodeURIComponent(o.id) + '/' + encodeURIComponent(o.stand || 'stand.png');
+    return root + encodeURIComponent(o.id) + '/' + encodeURIComponent(o.stand || 'stand.png');
   }
 
   const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -181,6 +183,19 @@
     '@keyframes petStandBreathe{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(-2px) scaleY(1.008)}}' +
     '@media (prefers-reduced-motion: reduce){.pet-stand{animation:none}}';
   document.head.appendChild(style);
+
+  // 服装包清单与绝对根目录由 host 提供：页面可能跑在 junction 后的真实路径上，相对路径会跨盘失效
+  fetch(BASE + '/outfits')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      if (!d) return;
+      if (typeof d.root === 'string' && d.root) root = d.root;
+      if (Array.isArray(d.list)) window.PET_OUTFITS = d.list;
+      for (const s of sprites) apply(s);
+    })
+    .catch(() => {
+      /* host 不可达：维持相对路径与已有的 window.PET_OUTFITS */
+    });
 
   window.PetWardrobe = { list, current, currentId, setOutfit, urlFor, standUrl, apply };
 })();

@@ -1059,8 +1059,16 @@
       if (!cfg.tts || !window.PetVoice || !state || state.ok !== true) return;
       let text;
       if (state.shape === 'money') {
-        const unit = state.currency === 'USD' ? '美元' : '元';
-        text = '当前余额 ' + (state.total ?? '未知') + ' ' + unit;
+        // 新口径是多币种钱包：金额在 wallets[].total，顶层没有 state.total。
+        // 归一化后的视图把 wallets 放在顶层，原始叶子数据里它在 state.data.wallets——两种都认。
+        const raw = Array.isArray(state.wallets) ? state.wallets : Array.isArray(state.data && state.data.wallets) ? state.data.wallets : [];
+        const wallets = raw.filter((w) => w && Number(w.total) !== 0);
+        const money = wallets.length
+          ? wallets.map((w) => w.total + ' ' + (w.currency === 'USD' ? '美元' : '元')).join('，')
+          : state.total != null
+            ? state.total + ' ' + (state.currency === 'USD' ? '美元' : '元')
+            : '0 元';
+        text = '当前余额 ' + money;
         if (state.tier === 'peak') text += '，还算充足。';
         else if (state.tier === 'idle') text += '，有点紧张了，记得充值哦。';
         else text += '。';

@@ -96,7 +96,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { homedir } from 'node:os';
 import { join, normalize, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths';
 import { credentialRef } from '@deepseek-ai/dsh-credentials';
 import { queryBalance } from './balance/index';
@@ -1139,6 +1139,29 @@ export function apply(ctx: any): void {
   ): Promise<RouteResult> => {
     const url = new URL(rawUrl, 'http://localhost');
     const rest = decodeURIComponent(url.pathname.slice(ROUTE_PREFIX.length + 1));
+
+    // 服装包清单：/dsh-pet-7340/outfits
+    // 渲染端不能靠相对路径读 ~/.dsh/dsh-pet/outfits/outfits.js：插件目录可以被 junction/symlink
+    // 指到别的盘（例如装到 D:），页面自身的真实路径就变了，`../../../../../../dsh-pet/outfits/`
+    // 会跨盘解析失败（表现为「右键菜单里没有换装」）。这里由 host 给出绝对 file:// 根目录。
+    if (rest === 'outfits') {
+      if (method !== 'GET') return { kind: 'json', status: 405, obj: { error: 'method not allowed' } };
+      const dir = join(dshHome, 'dsh-pet', 'outfits');
+      let list: unknown = [];
+      try {
+        const src = readFileSync(join(dir, 'outfits.js'), 'utf8');
+        const m = /window\.PET_OUTFITS\s*=\s*(\[[\s\S]*\])\s*;?\s*$/.exec(src);
+        if (m) list = JSON.parse(m[1]);
+      } catch {
+        /* 没有清单 —— 只有原版动画 */
+      }
+      return {
+        kind: 'json',
+        status: 200,
+        obj: { root: pathToFileURL(dir).href + '/', list },
+        headers: { 'cache-control': 'no-cache, no-store' },
+      };
+    }
 
     // 成品配置：/dsh-pet-7340/config（GET 读取合并成品 / PUT 保存用户层 / POST 同步内置默认）
     if (rest === 'config') {
