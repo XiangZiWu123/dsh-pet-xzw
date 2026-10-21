@@ -1287,10 +1287,10 @@ class PetSprite {
       petX: this.pos.x,
       petY: this.pos.y,
     };
+    this.syncInputBusy();
     // 拖拽信号（桌面端专有）：主进程的兜底穿透通道按**光标与窗口矩形**判定，而窗口比宠物身体大一圈；
     // 拖拽中宠物滞后于光标，光标可能跑到窗口外→窗口翻回穿透→本窗口收不到 pointermove/pointerup
     // （宠物"飞"出去，见 pointer-target.js）。这里上报"我正在用输入"，主进程据此绝不翻回穿透。
-    this.syncInputBusy();
     // 注意：舞台「拍平」（去掉 translateY(bottomPad)）不能在这里做——
     // 纯点击（按下即松开）会让人物瞬移上移再落下。与浏览器一致：只有拖拽超过阈值才拍平。
   }
